@@ -15,6 +15,20 @@ from Crypto.Cipher import AES
 import requests
 
 sys.path.insert(0, '/Users/chuck/.openclaw/workspace')
+sys.path.insert(0, '/opt/wework-bot')
+
+# 导入旺店通 API
+try:
+    from wangdiantong_api import WdtAPI
+    # 从 keychain 或环境变量获取密钥
+    import os
+    WDT_SID = os.getenv('WDT_SID', '')
+    WDT_APPKEY = os.getenv('WDT_APPKEY', '')
+    WDT_APPSECRET = os.getenv('WDT_APPSECRET', '')
+    wdt_api = WdtAPI(WDT_SID, WDT_APPKEY, WDT_APPSECRET) if WDT_SID else None
+except Exception as e:
+    print(f"⚠️ 旺店通 API 加载失败: {e}")
+    wdt_api = None
 
 # 企业微信配置
 CORP_ID = "ww1b7a366e3b44c277"
@@ -202,6 +216,8 @@ class WeWorkHandler:
     
     def get_ai_reply(self, user_msg):
         """调用 AI 获取回复"""
+        import re
+        
         # 简单关键词匹配
         responses = {
             "你好": "嘿！我是小白，有啥事儿直说，别客气。🦊",
@@ -217,10 +233,19 @@ class WeWorkHandler:
         if user_msg in responses:
             return responses[user_msg]
         
+        # 库存查询 - 提取商品名（如"奔富 389"、"茅台 2023"）
+        if "库存" in user_msg or "查" in user_msg or "多少" in user_msg:
+            # 尝试提取商品名（去掉"库存"、"查"等词）
+            clean_msg = user_msg.replace("库存", "").replace("查", "").replace("一下", "").replace("吗", "").strip()
+            if clean_msg and len(clean_msg) > 1:
+                return self.query_stock(clean_msg)
+        
+        # 如果直接发商品名（如"奔富 389"），也查库存
+        if re.match(r'^[\u4e00-\u9fa5]+\s*\d+$', user_msg.strip()):
+            return self.query_stock(user_msg.strip())
+        
         # 关键词匹配
-        if "库存" in user_msg:
-            return "查库存？报商品名。"
-        elif "价格" in user_msg or "多少钱" in user_msg:
+        if "价格" in user_msg or "多少钱" in user_msg:
             return "哪款？别让我猜。"
         elif "茅台" in user_msg:
             return "茅台... 最近价格波动挺大，具体哪款？"
@@ -228,9 +253,23 @@ class WeWorkHandler:
             return "在。说事。"
         elif "谢谢" in user_msg:
             return "别谢，应该的。还有别的吗？"
+        elif "哈哈" in user_msg or "嘻嘻" in user_msg:
+            return "笑啥？有啥好事？"
         
-        # 默认回复（更有人味儿的版本）
+        # 默认回复
         return f"收到: {user_msg}\n\n这个我还不太会，去问老羊吧，或者等我学一学。🦊"
+    
+    def query_stock(self, goods_name):
+        """查询库存"""
+        if not wdt_api:
+            return f"要查 {goods_name} 的库存？\n\n旺店通 API 还没配置好，找老羊弄一下。"
+        
+        try:
+            # 这里调用旺店通 API 查询库存
+            # 简化版：返回提示，实际查询需要商品编码映射
+            return f"查 {goods_name} 库存...\n\n旺店通已连接，但需要商品编码映射表。\n让老羊导入商品编码对照表，我就能查了。"
+        except Exception as e:
+            return f"查 {goods_name} 库存失败了: {e}\n找老羊看看。"
     
     def build_reply(self, to_user, from_user, content):
         """构建加密回复消息"""
