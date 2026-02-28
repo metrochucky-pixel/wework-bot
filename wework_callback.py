@@ -334,33 +334,53 @@ class WeWorkHandler:
     def query_stock(self, goods_name):
         """查询库存 - 真正调用旺店通API"""
         try:
-            # 从 keychain 或环境变量获取凭证
             import os
+            import sys
+            sys.path.insert(0, '/opt/wework-bot')
+            
+            # 导入旺店通API
+            try:
+                from wangdiantong_api import WdtAPI
+            except:
+                return f"🔍 查询「{goods_name}」...\n\n旺店通API模块未找到，稍等配置。"
+            
+            # 获取凭证
             sid = os.getenv('WDT_SID', 'wsds2')
             appkey = os.getenv('WDT_APPKEY', 'wsds2-ot')
-            # Secret 需要从 keychain 获取，这里先用简化方式
+            appsecret = os.getenv('WDT_SECRET', '')
             
-            # 如果goods_name是纯数字，认为是商品编码
-            # 否则需要商品名称到编码的映射
-            if goods_name.isdigit():
-                spec_no = goods_name
+            if not appsecret:
+                return f"🔍 查询「{goods_name}」...\n\n⚠️ 旺店通密钥未配置，联系管理员。"
+            
+            # 初始化API
+            wdt = WdtAPI(sid, appkey, appsecret)
+            
+            # 商品名称到编码映射（简化版）
+            name_map = {
+                '389': 'BJD002',
+                '407': 'BJD003', 
+                '奔富389': 'BJD002',
+                '奔富407': 'BJD003',
+                '茅台': 'MT001',
+            }
+            
+            spec_no = name_map.get(goods_name, goods_name)
+            
+            # 调用旺店通库存查询
+            result = wdt.stock(spec_no)
+            
+            if result.get('code') == 0:
+                stocks = result.get('data', [])
+                if stocks:
+                    stock = stocks[0]
+                    return f"📦 「{goods_name}」库存信息:\n\n编码: {spec_no}\n可用: {stock.get('stock_num', 'N/A')}\n在途: {stock.get('on_way_num', 'N/A')}\n冻结: {stock.get('freeze_num', 'N/A')}"
+                else:
+                    return f"📦 「{goods_name}」({spec_no})\n\n库存为空或商品不存在。"
             else:
-                # 简单的名称映射（实际应该用数据库）
-                name_map = {
-                    '389': 'BJD002',  # 奔富389示例
-                    '407': 'BJD003',  # 奔富407示例
-                    '奔富389': 'BJD002',
-                    '奔富407': 'BJD003',
-                    '茅台': 'MT001',
-                }
-                spec_no = name_map.get(goods_name, goods_name)
-            
-            # 这里简化处理，返回提示信息
-            # 实际接入需要完整的旺店通API调用
-            return f"🔍 查询「{goods_name}」库存...\n\n商品编码: {spec_no}\n\n⚠️ 旺店通API需要完整配置，请确认:\n1. 商品编码映射表已导入\n2. WDT_SECRET 已配置\n\n临时回复: {goods_name} 库存充足，可正常下单。"
-            
+                return f"❌ 查询失败: {result.get('message', '未知错误')}"
+                
         except Exception as e:
-            return f"查「{goods_name}」库存出错了: {e}\n问我老板去。"
+            return f"🔍 查询「{goods_name}」出错了: {str(e)[:50]}\n问我老板去。"
     
     def build_reply(self, to_user, from_user, content):
         """构建加密回复消息"""
