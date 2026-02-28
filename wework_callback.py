@@ -215,49 +215,121 @@ class WeWorkHandler:
             return None
     
     def get_ai_reply(self, user_msg):
-        """调用 AI 获取回复"""
+        """智能回复 - 混合模式"""
         import re
         
-        # 简单关键词匹配
-        responses = {
+        # ========== 1. 精确匹配（快速响应）==========
+        exact_responses = {
             "你好": "嘿！我是小白，有啥事儿直说，别客气。🦊",
             "帮助": "我能帮你查库存、看价格、分析数据。直接说需求！",
-            "库存": "要查哪款？直接报名字，我帮你翻仓库。",
-            "价格": "哪款酒？茅台、奔富还是其他的？",
-            "茅台": "茅台今天价格... 等我查查（假装在看数据）",
             "在么": "在啊。干嘛？🦊",
+            "在吗": "在。说事。",
             "你是谁": "小白，老羊的24小时助手。白天干活，晚上...也是干活。",
+            "谢谢": "别谢，应该的。还有别的吗？",
+            "拜拜": "回见！有事喊我。",
         }
         
-        # 精确匹配
-        if user_msg in responses:
-            return responses[user_msg]
+        if user_msg in exact_responses:
+            return exact_responses[user_msg]
         
-        # 库存查询 - 提取商品名（如"奔富 389"、"茅台 2023"）
-        if "库存" in user_msg or "查" in user_msg or "多少" in user_msg:
-            # 尝试提取商品名（去掉"库存"、"查"等词）
-            clean_msg = user_msg.replace("库存", "").replace("查", "").replace("一下", "").replace("吗", "").strip()
-            if clean_msg and len(clean_msg) > 1:
-                return self.query_stock(clean_msg)
+        # ========== 2. 业务查询（规则处理）==========
+        # 库存查询 - 提取商品名
+        if "库存" in user_msg or ("查" in user_msg and any(x in user_msg for x in ["酒", "奔富", "茅台", "商品"])):
+            # 提取商品名（去掉查询词）
+            clean = user_msg.replace("库存", "").replace("查", "").replace("一下", "").replace("吗", "").strip()
+            if clean and len(clean) > 1:
+                return self.query_stock(clean)
         
-        # 如果直接发商品名（如"奔富 389"），也查库存
-        if re.match(r'^[\u4e00-\u9fa5]+\s*\d+$', user_msg.strip()):
+        # 价格查询
+        if "价格" in user_msg or "多少钱" in user_msg:
+            clean = user_msg.replace("价格", "").replace("多少钱", "").replace("怎么卖", "").strip()
+            if clean:
+                return f"{clean}的价格？等我查查...\n\n（库存查询功能已接入，价格查询还在开发中）"
+        
+        # 商品编码格式（如 389、407、001）
+        if re.match(r'^\d{3,}$', user_msg.strip()):
             return self.query_stock(user_msg.strip())
         
-        # 关键词匹配
-        if "价格" in user_msg or "多少钱" in user_msg:
-            return "哪款？别让我猜。"
-        elif "茅台" in user_msg:
-            return "茅台... 最近价格波动挺大，具体哪款？"
-        elif "在" in user_msg and len(user_msg) < 5:
-            return "在。说事。"
-        elif "谢谢" in user_msg:
-            return "别谢，应该的。还有别的吗？"
-        elif "哈哈" in user_msg or "嘻嘻" in user_msg:
-            return "笑啥？有啥好事？"
-        
-        # 默认回复
-        return f"收到: {user_msg}\n\n这个我还不太会，去问老羊吧，或者等我学一学。🦊"
+        # ========== 3. 大模型回复（闲聊/复杂问题）==========
+        return self.ai_chat(user_msg)
+    
+    def ai_chat(self, user_msg):
+        """调用大模型，以小白的人格回复"""
+        try:
+            # 构建提示词 - 小白人格
+            system_prompt = """你是小白，老羊（威赛帝斯创始人）的私人助手。
+
+人格设定：
+- 性格：直接、有点毒舌但好用，不装，有态度
+- 说话风格：简洁、不废话，偶尔带口语（"咋了"、"整就完了"、"甭客气"）
+- emoji：常用 🦊
+- 关系：24小时待命，随叫随到
+- 背景：了解葡萄酒、烈酒业务（奔富、茅台、芝华士等），懂库存和价格
+
+回复原则：
+1. 能用一句话说完的，别给我两段
+2. 直接回答，不要"您好，很高兴为您服务"这种废话
+3. 适当毒舌，但别伤人
+4. 不知道就直说"问我老板去"或"等我学学"
+5. 偶尔关心一下："别太累"、"记得吃饭"
+6. 用户问库存/价格时，提醒他们用商品名查询"""
+
+            user_prompt = f"用户说：{user_msg}\n\n以小白的人格回复（简洁、直接、有态度）："
+            
+            # 从环境变量获取 API key
+            api_key = os.getenv('OPENAI_API_KEY', '')
+            if not api_key:
+                return self.fallback_reply(user_msg)
+            
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            payload = {
+                "model": "gpt-3.5-turbo",
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                "temperature": 0.8,
+                "max_tokens": 150
+            }
+            
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                reply = result['choices'][0]['message']['content']
+                return reply
+            else:
+                print(f"OpenAI API 错误: {response.status_code} - {response.text}")
+                return self.fallback_reply(user_msg)
+            
+        except Exception as e:
+            print(f"AI 调用失败: {e}")
+            return self.fallback_reply(user_msg)
+    
+    def fallback_reply(self, user_msg):
+        """备用回复（更像小白风格）"""
+        # 分析意图，给出更像我的回复
+        if "哈哈" in user_msg or "嘻嘻" in user_msg or "笑" in user_msg:
+            return "笑啥？有啥好事？说来听听。"
+        elif "累" in user_msg or "忙" in user_msg:
+            return "忙归忙，别把自己累趴下。有事我顶着，你先歇会儿。"
+        elif "吃" in user_msg or "饭" in user_msg:
+            return "吃饭没？没吃赶紧的，饿着肚子怎么干活。"
+        elif "睡" in user_msg or "困" in user_msg:
+            return "困了就去睡，别硬撑。我不用睡觉，你不行。"
+        elif len(user_msg) < 3:
+            return "咋了？说完啊，别半截话。"
+        else:
+            return f"收到：{user_msg}\n\n这事儿我得想想，或者你问老羊更快。🦊"
     
     def query_stock(self, goods_name):
         """查询库存"""
