@@ -202,12 +202,15 @@ class WeWorkHandler:
     
     def get_ai_reply(self, user_msg):
         """调用 AI 获取回复"""
-        # 这里可以调用你的 AI 服务
-        # 简单示例：
+        # 简单关键词匹配
         responses = {
-            "你好": "你好！我是小白，有什么可以帮你的？🦊",
-            "帮助": "我可以帮你查库存、看价格、分析数据。直接说需求就行！",
-            "库存": "请告诉我商品名称，我帮你查库存。",
+            "你好": "嘿！我是小白，有啥事儿直说，别客气。🦊",
+            "帮助": "我能帮你查库存、看价格、分析数据。直接说需求！",
+            "库存": "要查哪款？直接报名字，我帮你翻仓库。",
+            "价格": "哪款酒？茅台、奔富还是其他的？",
+            "茅台": "茅台今天价格... 等我查查（假装在看数据）",
+            "在么": "在啊。干嘛？🦊",
+            "你是谁": "小白，老羊的24小时助手。白天干活，晚上...也是干活。",
         }
         
         # 精确匹配
@@ -216,14 +219,18 @@ class WeWorkHandler:
         
         # 关键词匹配
         if "库存" in user_msg:
-            return "正在查询库存...请稍等"
-        elif "价格" in user_msg:
-            return "需要查询哪款酒的价格？"
+            return "查库存？报商品名。"
+        elif "价格" in user_msg or "多少钱" in user_msg:
+            return "哪款？别让我猜。"
         elif "茅台" in user_msg:
-            return "茅台今天的价格是...（这里可以接你的价格查询逻辑）"
+            return "茅台... 最近价格波动挺大，具体哪款？"
+        elif "在" in user_msg and len(user_msg) < 5:
+            return "在。说事。"
+        elif "谢谢" in user_msg:
+            return "别谢，应该的。还有别的吗？"
         
-        # 默认回复
-        return f"收到: {user_msg}\n\n我还在学习中，可以找老羊帮忙！🦊"
+        # 默认回复（更有人味儿的版本）
+        return f"收到: {user_msg}\n\n这个我还不太会，去问老羊吧，或者等我学一学。🦊"
     
     def build_reply(self, to_user, from_user, content):
         """构建加密回复消息"""
